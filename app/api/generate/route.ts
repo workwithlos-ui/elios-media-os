@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ELIOS_CONTEXT, SPCL_WEIGHTS } from "@/lib/context";
+import { fetchSharedContext, formatContextForPrompt } from "@/lib/shared-context";
 
 // ── Shared helper ────────────────────────────────────────────────
 const HEADERS = {
@@ -25,10 +26,11 @@ async function callClaude(system: string, user: string, model = "claude-opus-4-5
 }
 
 // ── Stage 1: Generate (no self-scoring) ──────────────────────────
-const GEN_SYSTEM = `You are the ELIOS Content Generation Agent. You ONLY write content. You do NOT score it.
+function buildGenSystem(contextStr: string) {
+  return `You are the ELIOS Content Generation Agent. You ONLY write content. You do NOT score it.
 
 BUSINESS CONTEXT:
-${JSON.stringify(ELIOS_CONTEXT, null, 2)}
+${contextStr}
 
 LOS'S VOICE RULES:
 - Direct. Builder-first. No fluff.
@@ -53,6 +55,7 @@ SELF-CRITIQUE GATE — before finalizing EACH post, check:
 5. Is any forbidden word present? → Remove it.
 
 Generate content that attracts buyers who can write $10K–$30K checks. Not likes. Buyers.`;
+}
 
 // ── Stage 2: Critique ────────────────────────────────────────────
 const CRITIQUE_SYSTEM = `You are a brutal content critic for ELIOS. You did NOT write this content. Your job is to find EVERY weakness.
@@ -69,10 +72,11 @@ For each post, provide:
 Output ONLY valid JSON: { "critiques": [{ "post_id": "...", "weaknesses": ["..."], "strongest_element": "...", "revision_instructions": ["..."] }] }`;
 
 // ── Stage 3: Revise ──────────────────────────────────────────────
-const REVISE_SYSTEM = `You are the ELIOS Content Revision Agent. You receive content with critique notes and must produce improved versions.
+function buildReviseSystem(contextStr: string) {
+  return `You are the ELIOS Content Revision Agent. You receive content with critique notes and must produce improved versions.
 
 BUSINESS CONTEXT:
-${JSON.stringify(ELIOS_CONTEXT, null, 2)}
+${contextStr}
 
 RULES:
 - Preserve the strongest elements identified by the critic
@@ -82,6 +86,7 @@ RULES:
 - The hook line goes in "hook" field ONLY. Do NOT repeat it in "body".
 
 Output the same JSON structure as the original posts with the improved content.`;
+}
 
 // ── Stage 4: Independent Score ───────────────────────────────────
 const SCORE_SYSTEM = `You are an independent SPCL Scoring Agent. You did NOT write or revise this content. Score it honestly and harshly.
@@ -123,17 +128,17 @@ CRITICAL: Score honestly. A mediocre post should score 50-65. Only genuinely exc
 Output ONLY valid JSON.`;
 
 // ── Scoring math ─────────────────────────────────────────────────
-function calcTotal(s: any) {
+function calcTotal(s: any, weights: Record<string, number>) {
   return Math.round(
-    s.status * SPCL_WEIGHTS.status * 10 +
-    s.power * SPCL_WEIGHTS.power * 10 +
-    s.credibility * SPCL_WEIGHTS.credibility * 10 +
-    s.likeness * SPCL_WEIGHTS.likeness * 10 +
-    s.icp_fit * SPCL_WEIGHTS.icp_fit * 10 +
-    s.conversion_relevance * SPCL_WEIGHTS.conversion_relevance * 10 +
-    s.platform_fit * SPCL_WEIGHTS.platform_fit * 10 +
-    s.novelty * SPCL_WEIGHTS.novelty * 10 -
-    s.risk * Math.abs(SPCL_WEIGHTS.risk) * 10
+    s.status * (weights.status || 0.18) * 10 +
+    s.power * (weights.power || 0.20) * 10 +
+    s.credibility * (weights.credibility || 0.15) * 10 +
+    s.likeness * (weights.likeness || 0.10) * 10 +
+    s.icp_fit * (weights.icp_fit || 0.12) * 10 +
+    s.conversion_relevance * (weights.conversion_relevance || 0.10) * 10 +
+    s.platform_fit * (weights.platform_fit || 0.08) * 10 +
+    s.novelty * (weights.novelty || 0.05) * 10 -
+    s.risk * Math.abs(weights.risk || -0.08) * 10
   );
 }
 
@@ -146,8 +151,11 @@ export async function POST(req: NextRequest) {
   try {
     const { atoms, plan, platform, count = 3, audience_id, awareness_stage } = await req.json();
 
-    const platformSpec = ELIOS_CONTEXT.platform_specs[platform as keyof typeof ELIOS_CONTEXT.platform_specs];
-    const audience = ELIOS_CONTEXT.audiences.find(a => a.id === audience_id) || ELIOS_CONTEXT.audiences[0];
+    const sharedCtx = await fetchSharedContext();
+    const contextStr = sharedCtx ? formatContextForPrompt(sharedCtx) : JSON.stringify(ELIOS_CONTEXT, null, 2);
+    const platformSpec = sharedCtx?.platform_specs[platform] ?? ELIOS_CONTEXT.platform_specs[platform as keyof typeof ELIOS_CONTEXT.platform_specs];
+    const audience = sharedCtx?.audiences.find((a: any) => a.id === audience_id) ?? ELIOS_CONTEXT.audiences.find(a => a.id === audience_id) ?? ELIOS_CONTEXT.audiences[0];
+    const weights = sharedCtx?.spcl_weights ?? SPCL_WEIGHTS;
 
     // ── STAGE 1: Generate raw content (no scoring) ───────────────
     const genPrompt = `Generate ${count} ${platform.toUpperCase()} posts.
@@ -180,7 +188,7 @@ For each post, output:
 Do NOT include scores — scoring is handled by a separate agent.
 Wrap all ${count} posts in: {"assets": [...]}`;
 
-    const genRaw = await callClaude(GEN_SYSTEM, genPrompt, "claude-opus-4-5", 6000);
+    const genRaw = await callClaude(buildGenSystem(contextStr), genPrompt, "claude-opus-4-5", 6000);
     const genResult = JSON.parse(genRaw);
     const drafts = genResult.assets || [];
 
@@ -227,7 +235,7 @@ Each asset must have: id, platform, awareness_stage, audience_id, objective, hoo
 Do NOT include scores.`;
 
       try {
-        const reviseRaw = await callClaude(REVISE_SYSTEM, revisePrompt, "claude-opus-4-5", 6000);
+        const reviseRaw = await callClaude(buildReviseSystem(contextStr), revisePrompt, "claude-opus-4-5", 6000);
         const reviseResult = JSON.parse(reviseRaw);
         if (reviseResult.assets && reviseResult.assets.length > 0) {
           revisedAssets = reviseResult.assets;
@@ -280,7 +288,7 @@ Output ONLY valid JSON:
         risk: indScore.risk || 3,
         total: 0,
       };
-      scores.total = calcTotal(scores);
+      scores.total = calcTotal(scores, weights);
 
       return {
         ...asset,

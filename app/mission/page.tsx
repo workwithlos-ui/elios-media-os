@@ -61,7 +61,7 @@ const REVIEW_QUEUE = [
 const PIPELINE = [
   { name: "Sales AI Client", offer: "Sales OS", value: 8000, stage: "Proposal Sent", days: 3 },
   { name: "Kent Clothier", offer: "Custom Build", value: 35000, stage: "Delivery", days: 0 },
-  { name: "Inbound — Agency Owner", offer: "Advisory OS", value: 22000, stage: "Demo Booked", days: 1 },
+  { name: "Inbound - Agency Owner", offer: "Advisory OS", value: 22000, stage: "Demo Booked", days: 1 },
   { name: "DTC Brand (cold DM)", offer: "Content OS", value: 3500, stage: "Interest", days: 5 },
 ];
 
@@ -82,8 +82,14 @@ export default function MissionControl() {
   const spclClass = (s: string) => `spcl-${s.toLowerCase()}`;
 
   function copyAsset(asset: typeof REVIEW_QUEUE[number]) {
-    const fullPost = [asset.hook, asset.body, asset.cta].filter(Boolean).join("\n\n");
-    navigator.clipboard.writeText(fullPost);
+    const hook = asset.hook || "";
+    // Strip hook from body start if the AI repeated it
+    const rawBody = asset.body || "";
+    const bodyFirstLine = rawBody.split("\n")[0].trim();
+    const body = bodyFirstLine === hook.trim() ? rawBody.split("\n").slice(1).join("\n").trimStart() : rawBody;
+    const cta = asset.cta || "";
+    const parts = [hook, body, cta].filter(p => p.trim().length > 0);
+    navigator.clipboard.writeText(parts.join("\n\n"));
     setCopying(asset.id);
     setTimeout(() => setCopying(null), 2000);
   }
@@ -243,8 +249,8 @@ export default function MissionControl() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
           {[
             { angle: "Why hiring is the wrong scaling model", spcl: "L", audience: "Agency Owners" },
-            { angle: "60-second speed-to-lead — the proof post", spcl: "P", audience: "Agency Owners" },
-            { angle: "n8n vs Claude-native — architecture breakdown", spcl: "P", audience: "Agencies + DTC" },
+            { angle: "60-second speed-to-lead - the proof post", spcl: "P", audience: "Agency Owners" },
+            { angle: "n8n vs Claude-native - architecture breakdown", spcl: "P", audience: "Agencies + DTC" },
           ].map((a, i) => (
             <div key={i} style={{ padding: "12px 14px", background: "var(--panel-2)", borderRadius: "var(--r-sm)", border: "1px solid var(--line)" }}>
               <div style={{ fontSize: 12, marginBottom: 6, lineHeight: 1.5 }}>{a.angle}</div>

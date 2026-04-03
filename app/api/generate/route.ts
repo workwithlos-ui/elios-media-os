@@ -72,9 +72,9 @@ For each post, output:
   "awareness_stage": "${awareness_stage || "problem_aware"}",
   "audience_id": "${audience_id || "agency_owners"}",
   "objective": "what this post achieves",
-  "hook": "the first line/sentence",
-  "body": "full post content",
-  "cta": "the call to action",
+  "hook": "the opening line only -- do NOT repeat this in body",
+  "body": "full post body text -- start AFTER the hook, do not repeat the hook here",
+  "cta": "the call to action -- a single closing line or sentence",
   "spcl_primary": "S|P|C|L",
   "scores": {
     "status": 0-10,

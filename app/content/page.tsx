@@ -55,7 +55,14 @@ export default function ContentEngine() {
   }
 
   function copyAsset(asset: any) {
-    const text = `${asset.hook}\n\n${asset.body}\n\n${asset.cta}`;
+    const hook: string = asset.hook || "";
+    // The AI sometimes starts the body with the hook line again -- strip it if so
+    const rawBody: string = asset.body || asset.content || asset.text || asset.caption || asset.post || "";
+    const bodyFirstLine = rawBody.split("\n")[0].trim();
+    const body = bodyFirstLine === hook.trim() ? rawBody.split("\n").slice(1).join("\n").trimStart() : rawBody;
+    const cta: string = asset.cta || "";
+    const parts = [hook, body, cta].filter(p => p.trim().length > 0);
+    const text = parts.join("\n\n");
     navigator.clipboard.writeText(text);
     setCopying(asset.id);
     setTimeout(() => setCopying(null), 2000);
@@ -161,7 +168,7 @@ export default function ContentEngine() {
                     <div style={{ padding: "16px 18px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }} onClick={() => setExpanded(isOpen ? null : asset.id)}>
                       {/* Score ring */}
                       <div style={{ width: 44, height: 44, borderRadius: "50%", border: `2px solid ${SCORE_COLORS[asset.status] || "var(--line)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: SCORE_COLORS[asset.status] }}>{asset.scores?.total || "—"}</span>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: SCORE_COLORS[asset.status] }}>{asset.scores?.total ?? "?"}</span>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.4, marginBottom: 8 }}>{asset.hook}</div>

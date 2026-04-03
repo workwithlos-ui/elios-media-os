@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ELIOS_CONTEXT, SPCL_WEIGHTS } from "@/lib/context";
-import { fetchSharedContext, formatContextForPrompt } from "@/lib/shared-context";
+import { fetchSharedContext, formatContextForPrompt, fetchToolSignals, formatSignalsForPrompt } from "@/lib/shared-context";
 
 // ── Shared helper ────────────────────────────────────────────────
 const HEADERS = {
@@ -152,7 +152,10 @@ export async function POST(req: NextRequest) {
     const { atoms, plan, platform, count = 3, audience_id, awareness_stage } = await req.json();
 
     const sharedCtx = await fetchSharedContext();
-    const contextStr = sharedCtx ? formatContextForPrompt(sharedCtx) : JSON.stringify(ELIOS_CONTEXT, null, 2);
+    const toolSignals = await fetchToolSignals('diagnosis_complete', 1);
+    const signalContext = formatSignalsForPrompt(toolSignals);
+    const baseContext = sharedCtx ? formatContextForPrompt(sharedCtx) : JSON.stringify(ELIOS_CONTEXT, null, 2);
+    const contextStr = signalContext ? `${baseContext}\n\n${signalContext}` : baseContext;
     const platformSpec = sharedCtx?.platform_specs[platform] ?? ELIOS_CONTEXT.platform_specs[platform as keyof typeof ELIOS_CONTEXT.platform_specs];
     const audience = sharedCtx?.audiences.find((a: any) => a.id === audience_id) ?? ELIOS_CONTEXT.audiences.find(a => a.id === audience_id) ?? ELIOS_CONTEXT.audiences[0];
     const weights = sharedCtx?.spcl_weights ?? SPCL_WEIGHTS;

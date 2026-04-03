@@ -77,3 +77,43 @@ Preferred Patterns: ${ctx.voice.preferred_patterns.join(', ')}
 Signature Phrases: ${ctx.voice.signature_phrases.join(', ')}
 `.trim();
 }
+
+// Read recent signals from other tools
+export async function fetchToolSignals(signalType?: string, limit = 5): Promise<any[]> {
+  try {
+    let url = `${SUPABASE_URL}/rest/v1/tool_signals?order=created_at.desc&limit=${limit}`;
+    if (signalType) url += `&signal_type=eq.${signalType}`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
+}
+
+// Format PAID diagnosis signals into context for content generation
+export function formatSignalsForPrompt(signals: any[]): string {
+  const paidDiag = signals.find(s => s.source_tool === 'PAID' && s.signal_type === 'diagnosis_complete');
+  if (!paidDiag) return '';
+  const p = paidDiag.payload;
+  return `
+=== PAID DIAGNOSTIC INTELLIGENCE (auto-fed from growth analysis) ===
+Influence Score: ${p.influenceScore}/100
+Bottleneck: ${p.bottleneck?.label} at ${p.bottleneck?.score}/10
+Content Strategy Directive: ${p.contentStrategy?.toUpperCase()}
+Funnel Stage: ${p.funnelStage}
+Channel Priority: ${p.channelPriority?.join(' > ')}
+Revenue: $${p.metrics?.revenue?.toLocaleString()} | Ad Spend: $${p.metrics?.adSpend?.toLocaleString()} | Margin: ${p.metrics?.margin}%
+
+CONTENT STRATEGY ADJUSTMENT:
+${p.bottleneck?.dimension === 'power' ? 'PAID detected Power as the bottleneck. Generate MORE actionable framework content. Include specific step-by-step processes readers can implement immediately. Power = the strongest influence lever.' : ''}
+${p.bottleneck?.dimension === 'credibility' ? 'PAID detected Credibility as the bottleneck. Generate MORE proof-heavy content. Lead with case studies, named clients, specific dollar amounts. Every post needs third-party validation.' : ''}
+${p.bottleneck?.dimension === 'status' ? 'PAID detected Status as the bottleneck. Generate MORE content that signals access to scarce resources. Revenue milestones, exclusive partnerships, behind-the-scenes at high-level meetings.' : ''}
+${p.bottleneck?.dimension === 'likeness' ? 'PAID detected Likeness as the bottleneck. Generate MORE personal content. Founder journey, struggles, daily routine, honest opinions. Relatability drives trust.' : ''}
+=== END PAID INTELLIGENCE ===`.trim();
+}
